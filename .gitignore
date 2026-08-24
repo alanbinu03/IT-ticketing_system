@@ -1,10 +1,18 @@
-# Environment and secrets
+# -----------------------------------------------------------------------------
+# Secrets — never commit real env files. Keep *.example templates.
+# -----------------------------------------------------------------------------
 .env
-.env.local
-.env.*.local
+.env.*
 !.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
 
-# Python
+# -----------------------------------------------------------------------------
+# Python — virtualenvs, caches, build artifacts
+# -----------------------------------------------------------------------------
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,11 +27,18 @@ venv/
 .mypy_cache/
 .ruff_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
+.nox/
 *.egg
+.cache/
+.python-version.bak
 
-# Node / frontend
+# -----------------------------------------------------------------------------
+# Node / frontend — dependencies and build output
+# -----------------------------------------------------------------------------
 node_modules/
 frontend/dist/
 frontend/.next/
@@ -34,27 +49,41 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+.pnpm-store/
+.yarn/
+.pnp.*
 
-# IDEs
+# -----------------------------------------------------------------------------
+# IDEs / OS
+# -----------------------------------------------------------------------------
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Docker / local data
+# -----------------------------------------------------------------------------
+# Docker / local data volumes
+# -----------------------------------------------------------------------------
 docker/data/
 postgres_data/
 redis_data/
 minio_data/
 
-# Logs
+# -----------------------------------------------------------------------------
+# Logs, local databases, uploads
+# -----------------------------------------------------------------------------
 *.log
 logs/
+*.sqlite
+*.sqlite3
+*.db
+uploads/
+media/
 
-# Alembic
+# -----------------------------------------------------------------------------
+# Alembic bytecode
+# -----------------------------------------------------------------------------
 migrations/versions/*.pyc
-
-# OS
-desktop.ini

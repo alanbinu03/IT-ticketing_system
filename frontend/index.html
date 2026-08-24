@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en" data-mode="day" data-palette="ocean">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IT Ticketing System</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var mode = localStorage.getItem("its.theme.mode") || "day";
+          var palette = localStorage.getItem("its.theme.palette") || "ocean";
+          document.documentElement.dataset.mode = mode;
+          document.documentElement.dataset.palette = palette;
+          document.documentElement.style.colorScheme = mode === "night" ? "dark" : "light";
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body class="bg-canvas text-ink antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

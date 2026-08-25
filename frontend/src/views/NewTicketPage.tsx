@@ -2,11 +2,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../lib/nav";
 import { api, getErrorMessage } from "../lib/api";
 import type { Category, TicketPriority } from "../lib/tickets";
 import { useState } from "react";
-import { BackLink, PageHeader } from "../components/ui";
+import { BackLink, PromptOption } from "../components/ui";
 
 const schema = z.object({
   title: z.string().min(3, "Give this a short, clear title"),
@@ -81,42 +81,36 @@ export function NewTicketPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
+    <div className="mx-auto max-w-2xl space-y-6">
       <div>
         <BackLink to="/tickets">← Back to tickets</BackLink>
-        <div className="mt-3">
-          <PageHeader
-            title="New ticket"
-            description="Tell IT what broke, who is affected, and how urgent it is."
-          />
-        </div>
       </div>
       <form
-        className="card space-y-5 p-6"
+        className="card space-y-6 p-6"
         onSubmit={form.handleSubmit((values) => createTicket.mutate(values))}
       >
-        <label className="block text-sm font-medium">
+        <label className="field-label">
           Title
-          <input className="input mt-1" placeholder="Cannot connect to VPN" {...form.register("title")} />
+          <input className="input" placeholder="Cannot connect to VPN" {...form.register("title")} />
           {form.formState.errors.title && (
-            <p className="mt-1 text-xs text-red-500">{form.formState.errors.title.message}</p>
+            <p className="text-xs text-red-500">{form.formState.errors.title.message}</p>
           )}
         </label>
-        <label className="block text-sm font-medium">
+        <label className="field-label">
           What happened?
           <textarea
-            className="input mt-1"
+            className="input"
             rows={6}
             placeholder="What you were doing, what you expected, and any error messages."
             {...form.register("description")}
           />
           {form.formState.errors.description && (
-            <p className="mt-1 text-xs text-red-500">{form.formState.errors.description.message}</p>
+            <p className="text-xs text-red-500">{form.formState.errors.description.message}</p>
           )}
         </label>
         <div>
           <p className="text-sm font-medium">How urgent is this?</p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
             {PRIORITIES.map((item) => (
               <button
                 key={item.value}
@@ -133,16 +127,16 @@ export function NewTicketPage() {
             ))}
           </div>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          <label className="block text-sm font-medium">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="field-label">
             Category
             <select
-              className="input mt-1"
+              className="input"
               {...form.register("category_id", {
                 onChange: () => form.setValue("subcategory_id", ""),
               })}
             >
-              <option value="">Optional</option>
+              <PromptOption label="Optional" selected={form.watch("category_id") ?? ""} clearable />
               {categories.data?.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -150,10 +144,10 @@ export function NewTicketPage() {
               ))}
             </select>
           </label>
-          <label className="block text-sm font-medium">
+          <label className="field-label">
             Subcategory
-            <select className="input mt-1" {...form.register("subcategory_id")}>
-              <option value="">Optional</option>
+            <select className="input" {...form.register("subcategory_id")}>
+              <PromptOption label="Optional" selected={form.watch("subcategory_id") ?? ""} clearable />
               {selected?.children.map((item) => (
                 <option key={item.id} value={item.id}>
                   {item.name}
@@ -162,10 +156,10 @@ export function NewTicketPage() {
             </select>
           </label>
         </div>
-        <label className="block text-sm font-medium">
+        <label className="field-label">
           Attachments
-          <input className="input mt-1" type="file" disabled />
-          <p className="mt-1 text-xs text-muted">File uploads will be available in a later release.</p>
+          <input className="input" type="file" disabled />
+          <p className="text-xs text-muted">File uploads will be available in a later release.</p>
         </label>
         {error && <p className="text-sm text-red-500">{error}</p>}
         <div className="flex items-center gap-3">

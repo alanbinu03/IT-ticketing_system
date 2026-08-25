@@ -107,7 +107,6 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "endpoints": {
                 "login": f"{prefix}/auth/login",
-                "register": f"{prefix}/auth/register",
                 "me": f"{prefix}/users/me",
                 "tickets": f"{prefix}/tickets",
                 "ticket_summary": f"{prefix}/tickets/summary",

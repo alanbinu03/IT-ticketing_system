@@ -1,28 +1,32 @@
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "../lib/nav";
+import type { CSSProperties } from "react";
 import type { Ticket } from "../lib/tickets";
 import { formatRelative } from "../lib/tickets";
 import type { User } from "../lib/types";
-import { PriorityBadge, StatusBadge } from "../components/ui";
+import { PriorityBadge, PromptOption, StatusBadge } from "../components/ui";
 
 type Props = {
   tickets: Ticket[];
   assignees?: User[];
-  currentUserId?: string;
   assigningId?: string | null;
   showRequester?: boolean;
-  onAssign?: (ticket: Ticket, agentId: string) => void;
+  allowAssign?: boolean;
+  allowUnassign?: boolean;
+  onAssign?: (ticket: Ticket, agentId: string | null) => void;
 };
 
 export function TicketTable({
   tickets,
   assignees,
-  currentUserId,
   assigningId,
   showRequester = true,
+  allowAssign = true,
+  allowUnassign = false,
   onAssign,
 }: Props) {
   const navigate = useNavigate();
-  const canAssign = Boolean(onAssign && assignees && assignees.length > 0);
+  const canAssign = Boolean(allowAssign && onAssign && assignees && assignees.length > 0);
+  const canUnassign = Boolean(allowUnassign && onAssign);
   if (tickets.length === 0) {
     return (
       <div className="empty-state">
@@ -35,33 +39,33 @@ export function TicketTable({
     );
   }
   return (
-    <div className="card overflow-x-auto">
-      <table className="min-w-full text-left text-sm">
-        <thead className="bg-accent-soft text-xs uppercase tracking-wide text-muted">
+    <div className="card tickets-table-card overflow-x-auto">
+      <table className="data-table">
+        <thead>
           <tr>
-            <th className="px-4 py-3">Ticket</th>
-            {showRequester && <th className="px-4 py-3">Requester</th>}
-            <th className="px-4 py-3">Priority</th>
-            <th className="px-4 py-3">Status</th>
-            <th className="px-4 py-3">Owner</th>
-            <th className="px-4 py-3">Updated</th>
-            {canAssign && <th className="px-4 py-3">Assign</th>}
+            <th>Ticket</th>
+            {showRequester && <th>Requester</th>}
+            <th>Priority</th>
+            <th>Status</th>
+            <th>Assigned to</th>
+            <th>Updated</th>
           </tr>
         </thead>
         <tbody>
-          {tickets.map((ticket) => (
+          {tickets.map((ticket, index) => (
             <tr
               key={ticket.id}
-              className={`row-click border-t border-edge ${
+              className={`row-click row-enter ${
                 ticket.priority === "CRITICAL"
                   ? "bg-red-500/10"
                   : !ticket.assigned_agent
-                    ? "bg-amber-500/5"
+                    ? "row-waiting bg-amber-500/5"
                     : ""
-              }`}
+              } ${assigningId === ticket.id ? "row-busy" : ""}`}
+              style={{ "--row": Math.min(index, 14) } as CSSProperties}
               onClick={() => navigate(`/tickets/${ticket.id}`)}
             >
-              <td className="px-4 py-3">
+              <td>
                 <Link className="font-mono text-xs text-accent hover:underline" to={`/tickets/${ticket.id}`}>
                   {ticket.ticket_number}
                 </Link>
@@ -71,57 +75,60 @@ export function TicketTable({
                 </p>
               </td>
               {showRequester && (
-                <td className="px-4 py-3 whitespace-nowrap">{ticket.requester?.full_name ?? "—"}</td>
+                <td className="whitespace-nowrap">{ticket.requester?.full_name ?? "—"}</td>
               )}
-              <td className="px-4 py-3">
+              <td>
                 <PriorityBadge priority={ticket.priority} />
               </td>
-              <td className="px-4 py-3">
+              <td>
                 <StatusBadge status={ticket.status} />
               </td>
-              <td className="px-4 py-3 whitespace-nowrap">
-                {ticket.assigned_agent?.full_name ?? "Unassigned"}
+              <td
+                onClick={
+                  (canAssign && !ticket.assigned_agent) || (canUnassign && ticket.assigned_agent)
+                    ? (event) => event.stopPropagation()
+                    : undefined
+                }
+              >
+                {canAssign && !ticket.assigned_agent ? (
+                  <select
+                    className="input input-sm select-assign min-w-[12rem]"
+                    defaultValue=""
+                    disabled={assigningId === ticket.id}
+                    onChange={(e) => {
+                      const agentId = e.target.value;
+                      if (agentId) onAssign?.(ticket, agentId);
+                      e.target.value = "";
+                    }}
+                  >
+                    <PromptOption label="Assign to…" />
+                    {assignees?.map((admin) => (
+                      <option key={admin.id} value={admin.id}>
+                        {admin.full_name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div className="flex items-center justify-start gap-2">
+                    <span className="whitespace-nowrap font-medium">
+                      {ticket.assigned_agent?.full_name ?? "Unassigned"}
+                    </span>
+                    {canUnassign && ticket.assigned_agent && (
+                      <button
+                        className="btn-table btn-table-muted"
+                        type="button"
+                        disabled={assigningId === ticket.id}
+                        onClick={() => onAssign?.(ticket, null)}
+                      >
+                        {assigningId === ticket.id ? "Saving…" : "Release"}
+                      </button>
+                    )}
+                  </div>
+                )}
               </td>
-              <td className="px-4 py-3 whitespace-nowrap text-muted" title={ticket.updated_at}>
+              <td className="whitespace-nowrap text-muted" title={ticket.updated_at}>
                 {formatRelative(ticket.updated_at)}
               </td>
-              {canAssign && (
-                <td className="px-4 py-3" onClick={(event) => event.stopPropagation()}>
-                  {ticket.assigned_agent ? (
-                    <span className="text-xs text-muted">—</span>
-                  ) : (
-                    <div className="flex min-w-[220px] items-center gap-2">
-                      <select
-                        className="input py-1.5 text-xs"
-                        defaultValue=""
-                        disabled={assigningId === ticket.id}
-                        onChange={(e) => {
-                          const agentId = e.target.value;
-                          if (agentId) onAssign?.(ticket, agentId);
-                          e.target.value = "";
-                        }}
-                      >
-                        <option value="">Assign to…</option>
-                        {assignees?.map((admin) => (
-                          <option key={admin.id} value={admin.id}>
-                            {admin.full_name}
-                          </option>
-                        ))}
-                      </select>
-                      {currentUserId && (
-                        <button
-                          className="btn-ghost whitespace-nowrap text-xs"
-                          type="button"
-                          disabled={assigningId === ticket.id}
-                          onClick={() => onAssign?.(ticket, currentUserId)}
-                        >
-                          {assigningId === ticket.id ? "Saving…" : "Me"}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </td>
-              )}
             </tr>
           ))}
         </tbody>

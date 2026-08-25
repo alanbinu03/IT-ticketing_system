@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.users.schemas import UserMe
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=1, max_length=128)
 
 
@@ -28,7 +28,7 @@ class TokenResponse(BaseModel):
 
 class RegisterRequest(BaseModel):
     full_name: str = Field(min_length=1, max_length=200)
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
 
 
 class RegisterResponse(BaseModel):
@@ -38,13 +38,13 @@ class RegisterResponse(BaseModel):
 
 
 class VerifyEmailRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
     code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
     password: str = Field(min_length=8, max_length=128)
 
 
 class RequestOtpRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
 
 
 class RequestOtpResponse(BaseModel):
@@ -56,7 +56,7 @@ class AllowedDomainsResponse(BaseModel):
 
 
 class VerifyOtpRequest(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
     otp: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 

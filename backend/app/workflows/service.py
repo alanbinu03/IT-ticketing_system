@@ -10,23 +10,30 @@ ALLOWED_TRANSITIONS: dict[TicketStatus, frozenset[TicketStatus]] = {
         {
             TicketStatus.OPEN,
             TicketStatus.ASSIGNED,
+            TicketStatus.IN_PROGRESS,
+            TicketStatus.ON_HOLD,
             TicketStatus.CANCELLED,
             TicketStatus.REJECTED,
+            TicketStatus.RESOLVED,
         }
     ),
     TicketStatus.OPEN: frozenset(
         {
             TicketStatus.ASSIGNED,
             TicketStatus.IN_PROGRESS,
+            TicketStatus.ON_HOLD,
             TicketStatus.CANCELLED,
             TicketStatus.REJECTED,
+            TicketStatus.RESOLVED,
         }
     ),
     TicketStatus.ASSIGNED: frozenset(
         {
             TicketStatus.IN_PROGRESS,
             TicketStatus.OPEN,
+            TicketStatus.ON_HOLD,
             TicketStatus.CANCELLED,
+            TicketStatus.RESOLVED,
         }
     ),
     TicketStatus.IN_PROGRESS: frozenset(
@@ -48,11 +55,14 @@ ALLOWED_TRANSITIONS: dict[TicketStatus, frozenset[TicketStatus]] = {
         {
             TicketStatus.IN_PROGRESS,
             TicketStatus.ON_HOLD,
+            TicketStatus.RESOLVED,
         }
     ),
-    TicketStatus.ON_HOLD: frozenset({TicketStatus.IN_PROGRESS}),
-    TicketStatus.RESOLVED: frozenset({TicketStatus.CLOSED, TicketStatus.REOPENED}),
-    TicketStatus.REOPENED: frozenset({TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS}),
+    TicketStatus.ON_HOLD: frozenset({TicketStatus.IN_PROGRESS, TicketStatus.RESOLVED}),
+    TicketStatus.RESOLVED: frozenset({TicketStatus.CLOSED, TicketStatus.REOPENED, TicketStatus.IN_PROGRESS}),
+    TicketStatus.REOPENED: frozenset(
+        {TicketStatus.ASSIGNED, TicketStatus.IN_PROGRESS, TicketStatus.ON_HOLD, TicketStatus.RESOLVED}
+    ),
     TicketStatus.CLOSED: frozenset(),
     TicketStatus.CANCELLED: frozenset(),
     TicketStatus.REJECTED: frozenset(),
@@ -76,4 +86,10 @@ class WorkflowService:
         """Status to apply when a ticket is assigned, if a transition is required."""
         if current in {TicketStatus.NEW, TicketStatus.OPEN, TicketStatus.REOPENED}:
             return TicketStatus.ASSIGNED
+        return None
+
+    def unassignment_status(self, current: TicketStatus) -> TicketStatus | None:
+        """Status to apply when a ticket is released back to the unassigned queue."""
+        if current == TicketStatus.ASSIGNED:
+            return TicketStatus.OPEN
         return None

@@ -184,3 +184,84 @@ async def test_assign_roles_and_team_membership(client: AsyncClient) -> None:
     assert restored.status_code == 200
     disabled = await client.post(f"/api/v1/users/{user_id}/disable", headers=headers)
     assert disabled.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_can_delete_user_after_creating_them(client: AsyncClient) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    headers = auth_header(admin["access_token"])
+    email = unique_email("todelete")
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={"email": email, "password": "ValidPass123", "full_name": "Temp User"},
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+
+    deleted = await client.delete(f"/api/v1/users/{user_id}", headers=headers)
+    assert deleted.status_code == 204, deleted.text
+    listed = await client.get("/api/v1/users", headers=headers, params={"q": email})
+    assert listed.status_code == 200
+    assert all(item["email"] != email for item in listed.json()["items"])
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_delete_own_account(client: AsyncClient) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    response = await client.delete(
+        f"/api/v1/users/{admin['user']['id']}",
+        headers=auth_header(admin["access_token"]),
+    )
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "CANNOT_DELETE_SELF"
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_delete_users(client: AsyncClient) -> None:
+    settings = get_settings()
+    employee = await login(client, settings.seed_employee_email, settings.seed_employee_password)
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    response = await client.delete(
+        f"/api/v1/users/{admin['user']['id']}",
+        headers=auth_header(employee["access_token"]),
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_admin_cannot_delete_user_with_tickets(client: AsyncClient) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    headers = auth_header(admin["access_token"])
+    department_id = await _department_id(client, admin["access_token"])
+    email = unique_email("hastix")
+    created = await client.post(
+        "/api/v1/users",
+        headers=headers,
+        json={
+            "email": email,
+            "password": "ValidPass123",
+            "full_name": "Ticket Owner",
+            "department_id": department_id,
+        },
+    )
+    assert created.status_code == 201, created.text
+    user_id = created.json()["id"]
+    tokens = await login(client, email, "ValidPass123")
+    ticket = await client.post(
+        "/api/v1/tickets",
+        headers=auth_header(tokens["access_token"]),
+        json={
+            "title": "Need a laptop charger",
+            "description": "The charger stopped working this morning.",
+            "priority": "LOW",
+            "severity": "LOW",
+        },
+    )
+    assert ticket.status_code == 201, ticket.text
+    blocked = await client.delete(f"/api/v1/users/{user_id}", headers=headers)
+    assert blocked.status_code == 409
+    assert blocked.json()["error"]["code"] == "USER_HAS_HISTORY"

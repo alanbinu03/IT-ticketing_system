@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DepartmentRef(BaseModel):
@@ -15,7 +15,7 @@ class DepartmentRef(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str = Field(min_length=1, max_length=320)
     password: str = Field(min_length=8, max_length=128)
     full_name: str = Field(min_length=1, max_length=200)
     employee_code: str | None = Field(default=None, max_length=50)
@@ -39,6 +39,18 @@ class UserUpdate(BaseModel):
 
 class UserRolesUpdate(BaseModel):
     role_ids: list[UUID]
+
+
+class UserImportError(BaseModel):
+    row: int
+    email: str | None = None
+    message: str
+
+
+class UserImportResult(BaseModel):
+    created: int
+    skipped: int
+    errors: list[UserImportError] = Field(default_factory=list)
 
 
 class UserOut(BaseModel):

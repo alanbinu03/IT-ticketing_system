@@ -34,6 +34,7 @@ docker compose exec backend python -m app.database.seed
 | PostgreSQL | localhost:5433 |
 | Redis | localhost:6379 |
 | MinIO console | http://localhost:9001 |
+| Mailer | http://localhost:3010/health |
 
 Development logins (from `.env.example` — never use in production):
 

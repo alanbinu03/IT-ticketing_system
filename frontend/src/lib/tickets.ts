@@ -80,20 +80,64 @@ export const PRIORITY_LABEL: Record<TicketPriority, string> = {
   LOW: "P4",
 };
 
+export const VISIBLE_STATUSES = ["NEW", "IN_PROGRESS", "ON_HOLD", "RESOLVED"] as const;
+export type VisibleStatus = (typeof VISIBLE_STATUSES)[number];
+
+export const STATUS_GROUP: Record<VisibleStatus, TicketStatus[]> = {
+  NEW: ["NEW", "OPEN", "REOPENED"],
+  IN_PROGRESS: ["ASSIGNED", "IN_PROGRESS"],
+  ON_HOLD: ["WAITING_FOR_USER", "WAITING_FOR_VENDOR", "ON_HOLD"],
+  RESOLVED: ["RESOLVED", "CLOSED"],
+};
+
+export const VISIBLE_TRANSITIONS: Record<VisibleStatus, VisibleStatus[]> = {
+  NEW: ["IN_PROGRESS", "ON_HOLD", "RESOLVED"],
+  IN_PROGRESS: ["ON_HOLD", "RESOLVED"],
+  ON_HOLD: ["IN_PROGRESS", "RESOLVED"],
+  RESOLVED: ["IN_PROGRESS"],
+};
+
 export const STATUS_TRANSITIONS: Record<TicketStatus, TicketStatus[]> = {
-  NEW: ["OPEN", "ASSIGNED", "CANCELLED", "REJECTED"],
-  OPEN: ["ASSIGNED", "IN_PROGRESS", "CANCELLED", "REJECTED"],
-  ASSIGNED: ["IN_PROGRESS", "OPEN", "CANCELLED"],
+  NEW: ["OPEN", "ASSIGNED", "IN_PROGRESS", "ON_HOLD", "CANCELLED", "REJECTED", "RESOLVED"],
+  OPEN: ["ASSIGNED", "IN_PROGRESS", "ON_HOLD", "CANCELLED", "REJECTED", "RESOLVED"],
+  ASSIGNED: ["IN_PROGRESS", "OPEN", "ON_HOLD", "CANCELLED", "RESOLVED"],
   IN_PROGRESS: ["WAITING_FOR_USER", "WAITING_FOR_VENDOR", "ON_HOLD", "RESOLVED"],
   WAITING_FOR_USER: ["IN_PROGRESS", "ON_HOLD", "RESOLVED"],
-  WAITING_FOR_VENDOR: ["IN_PROGRESS", "ON_HOLD"],
-  ON_HOLD: ["IN_PROGRESS"],
-  RESOLVED: ["CLOSED", "REOPENED"],
-  REOPENED: ["ASSIGNED", "IN_PROGRESS"],
+  WAITING_FOR_VENDOR: ["IN_PROGRESS", "ON_HOLD", "RESOLVED"],
+  ON_HOLD: ["IN_PROGRESS", "RESOLVED"],
+  RESOLVED: ["CLOSED", "REOPENED", "IN_PROGRESS"],
+  REOPENED: ["ASSIGNED", "IN_PROGRESS", "ON_HOLD", "RESOLVED"],
   CLOSED: [],
   CANCELLED: [],
   REJECTED: [],
 };
+
+export function visibleStatus(status: TicketStatus): VisibleStatus | "CANCELLED" | "REJECTED" {
+  if (status === "CANCELLED" || status === "REJECTED") return status;
+  for (const item of VISIBLE_STATUSES) {
+    if (STATUS_GROUP[item].includes(status)) return item;
+  }
+  return "NEW";
+}
+
+export function statusLabel(status: TicketStatus): string {
+  const visible = visibleStatus(status);
+  if (visible === "NEW") return "New";
+  if (visible === "IN_PROGRESS") return "In progress";
+  if (visible === "ON_HOLD") return "On hold";
+  if (visible === "RESOLVED") return "Resolved";
+  if (visible === "CANCELLED") return "Cancelled";
+  return "Rejected";
+}
+
+export function statusClass(status: TicketStatus): string {
+  const visible = visibleStatus(status);
+  if (visible === "NEW") return "badge-new";
+  if (visible === "IN_PROGRESS") return "badge-work";
+  if (visible === "ON_HOLD") return "badge-wait";
+  if (visible === "RESOLVED") return "badge-done";
+  return "badge-stop";
+}
 
 export function priorityClass(priority: TicketPriority): string {
   if (priority === "CRITICAL") return "badge-p1";
@@ -102,17 +146,18 @@ export function priorityClass(priority: TicketPriority): string {
   return "badge-p4";
 }
 
-export function statusClass(status: TicketStatus): string {
-  if (status === "NEW" || status === "OPEN") return "badge-new";
-  if (status === "ASSIGNED" || status === "IN_PROGRESS") return "badge-work";
-  if (status === "WAITING_FOR_USER" || status === "WAITING_FOR_VENDOR" || status === "ON_HOLD") {
-    return "badge-wait";
-  }
-  if (status === "RESOLVED") return "badge-done";
-  if (status === "CLOSED") return "badge-closed";
-  if (status === "CANCELLED" || status === "REJECTED") return "badge-stop";
-  return "badge-reopen";
-}
+export const ACTIVE_QUEUE_STATUSES: TicketStatus[] = [
+  "NEW",
+  "OPEN",
+  "ASSIGNED",
+  "IN_PROGRESS",
+  "WAITING_FOR_USER",
+  "WAITING_FOR_VENDOR",
+  "ON_HOLD",
+  "REOPENED",
+];
+
+export const COMPLETED_QUEUE_STATUSES: TicketStatus[] = ["RESOLVED", "CLOSED"];
 
 export function formatDate(value: string | null): string {
   if (!value) return "—";

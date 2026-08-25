@@ -5,8 +5,8 @@ import { api, getErrorMessage } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import type { Page, User } from "../lib/types";
 import type { Ticket, TimelineEvent } from "../lib/tickets";
-import { STATUS_TRANSITIONS, formatDate, formatRelative } from "../lib/tickets";
-import { Avatar, BackLink, PriorityBadge, StatusBadge } from "../components/ui";
+import { VISIBLE_TRANSITIONS, formatDate, formatRelative, statusLabel, visibleStatus } from "../lib/tickets";
+import { Avatar, BackLink, PriorityBadge, PromptOption, StatusBadge } from "../components/ui";
 
 export function TicketDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -15,7 +15,6 @@ export function TicketDetailPage() {
   const [comment, setComment] = useState("");
   const [internal, setInternal] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [resolution, setResolution] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
 
   const ticketQuery = useQuery({
@@ -62,7 +61,6 @@ export function TicketDetailPage() {
       await api.post(`/api/v1/tickets/${id}/status`, {
         status,
         version: ticketQuery.data?.version,
-        resolution_summary: status === "RESOLVED" ? resolution : undefined,
       });
     },
     onSuccess: async () => {
@@ -73,9 +71,10 @@ export function TicketDetailPage() {
   });
 
   const assign = useMutation({
-    mutationFn: async (payload?: { agent_id?: string }) => {
+    mutationFn: async (payload?: { agent_id?: string | null }) => {
+      const agentId = payload && "agent_id" in payload ? payload.agent_id : assigneeId || null;
       await api.post(`/api/v1/tickets/${id}/assign`, {
-        agent_id: payload?.agent_id ?? (assigneeId || null),
+        agent_id: agentId,
         version: ticketQuery.data?.version,
       });
     },
@@ -99,27 +98,39 @@ export function TicketDetailPage() {
     );
   }
 
-  const nextStatuses = STATUS_TRANSITIONS[ticket.status].filter((status) => {
-    if (status === "RESOLVED") return hasPermission("ticket.resolve");
-    if (status === "CLOSED") return hasPermission("ticket.close");
-    if (status === "REOPENED") return hasPermission("ticket.reopen");
-    return hasPermission("ticket.update");
-  });
-  const canCloseTicket = ticket.status === "RESOLVED" && nextStatuses.includes("CLOSED");
-  const moveStatuses = nextStatuses.filter((status) => status !== "CLOSED");
+  const currentVisible = visibleStatus(ticket.status);
+  const nextVisible =
+    currentVisible === "CANCELLED" || currentVisible === "REJECTED"
+      ? []
+      : VISIBLE_TRANSITIONS[currentVisible].filter((status) => {
+          if (status === "RESOLVED") return hasPermission("ticket.resolve");
+          if (status === "IN_PROGRESS" && ticket.status === "CLOSED") return false;
+          if (status === "IN_PROGRESS" && ticket.status === "RESOLVED") {
+            return hasPermission("ticket.reopen");
+          }
+          return hasPermission("ticket.update");
+        });
+  const canComplete = nextVisible.includes("RESOLVED");
+  const moveStatuses = nextVisible.filter((status) => status !== "RESOLVED");
+  const isFinished = currentVisible === "RESOLVED" || currentVisible === "CANCELLED" || currentVisible === "REJECTED";
+  const canAssign = hasPermission("ticket.assign") && !ticket.assigned_agent && !isFinished;
+  const canRelease =
+    Boolean(ticket.assigned_agent) &&
+    !isFinished &&
+    (hasPermission("ticket.reassign") || hasPermission("ticket.assign"));
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+    <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
       <div className="space-y-4">
-        <div>
+        <div className="card p-5">
           <BackLink to="/tickets">← Back to tickets</BackLink>
-          <p className="mt-3 font-mono text-xs text-muted">{ticket.ticket_number}</p>
+          <p className="mt-4 font-mono text-xs text-muted">{ticket.ticket_number}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
-            <h2 className="text-2xl font-semibold tracking-tight">{ticket.title}</h2>
+            <h2 className="text-xl font-semibold leading-7 tracking-tight">{ticket.title}</h2>
             <StatusBadge status={ticket.status} />
             <PriorityBadge priority={ticket.priority} />
           </div>
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-ink">{ticket.description}</p>
+          <p className="mt-4 whitespace-pre-wrap text-sm leading-6 text-ink">{ticket.description}</p>
         </div>
         <div className="space-y-3">
           {(timelineQuery.data ?? []).length === 0 && (
@@ -128,7 +139,7 @@ export function TicketDetailPage() {
           {(timelineQuery.data ?? []).map((event) => (
             <div
               key={event.id}
-              className={`flex gap-3 rounded-2xl border p-3 text-sm ${
+              className={`flex gap-3 rounded-2xl border p-4 text-sm ${
                 event.comment_type === "INTERNAL_NOTE"
                   ? "border-amber-400/50 bg-amber-500/10"
                   : "border-edge bg-surface"
@@ -152,7 +163,7 @@ export function TicketDetailPage() {
         </div>
         {hasPermission("ticket.comment") && (
           <form
-            className="card space-y-3 p-4"
+            className="card space-y-4 p-5"
             onSubmit={(e) => {
               e.preventDefault();
               if (comment.trim()) addComment.mutate();
@@ -167,9 +178,8 @@ export function TicketDetailPage() {
             />
             <div className="flex items-center justify-between gap-3">
               {hasPermission("ticket.internal_note") ? (
-                <label className="text-sm text-muted">
+                <label className="inline-flex items-center gap-2 text-sm text-muted">
                   <input
-                    className="mr-2"
                     type="checkbox"
                     checked={internal}
                     onChange={(e) => setInternal(e.target.checked)}
@@ -187,92 +197,100 @@ export function TicketDetailPage() {
         )}
         {error && <p className="text-sm text-red-500">{error}</p>}
       </div>
-      <aside className="space-y-4 lg:sticky lg:top-0">
-        <div className="card space-y-3 p-4 text-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted">Details</p>
-          <Meta label="Requester" value={ticket.requester?.full_name} />
-          <Meta label="Category" value={ticket.subcategory?.name ?? ticket.category?.name ?? "—"} />
-          <Meta label="Team" value={ticket.assigned_team?.name ?? "Unassigned"} />
-          <Meta label="Agent" value={ticket.assigned_agent?.full_name ?? "Unassigned"} />
-          <Meta label="Created" value={formatDate(ticket.created_at)} />
-          {ticket.resolution_summary && <Meta label="Resolution" value={ticket.resolution_summary} />}
-        </div>
-        {canCloseTicket && (
-          <div className="card space-y-2 p-4">
-            <p className="text-sm font-medium">Completed</p>
-            <p className="text-sm text-muted">This ticket is resolved. Close it when the work is confirmed done.</p>
-            <button
-              className="btn-primary w-full"
-              type="button"
-              disabled={changeStatus.isPending}
-              onClick={() => changeStatus.mutate("CLOSED")}
-            >
-              {changeStatus.isPending ? "Closing…" : "Close ticket"}
-            </button>
+      <aside className="lg:sticky lg:top-0">
+        <div className="card overflow-hidden">
+          <div className="space-y-4 border-b border-edge p-5 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Details</p>
+            <Meta label="Requester" value={ticket.requester?.full_name} />
+            <Meta label="Category" value={ticket.subcategory?.name ?? ticket.category?.name ?? "—"} />
+            <Meta label="Assigned to" value={ticket.assigned_agent?.full_name ?? "Unassigned"} />
+            <Meta label="Created" value={formatDate(ticket.created_at)} />
+            {ticket.resolution_summary && <Meta label="Resolution" value={ticket.resolution_summary} />}
           </div>
-        )}
-        {moveStatuses.length > 0 && (
-          <div className="card space-y-2 p-4">
-            <p className="text-sm font-medium">Move this ticket</p>
-            {moveStatuses.includes("RESOLVED") && (
-              <textarea
-                className="input"
-                placeholder="Resolution summary (required to resolve)"
-                value={resolution}
-                onChange={(e) => setResolution(e.target.value)}
-              />
-            )}
-            <div className="flex flex-wrap gap-2">
-              {moveStatuses.map((status) => (
-                <button
-                  key={status}
-                  className="btn-secondary text-xs"
-                  type="button"
-                  disabled={changeStatus.isPending || (status === "RESOLVED" && !resolution.trim())}
-                  onClick={() => changeStatus.mutate(status)}
-                >
-                  {changeStatus.isPending ? "Updating…" : status.replaceAll("_", " ")}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {hasPermission("ticket.assign") && (
-          <div className="card space-y-2 p-4">
-            <p className="text-sm font-medium">Assign to</p>
-            <select className="input" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-              <option value="">Select admin</option>
-              {(users.data?.items ?? [])
-                .filter((item) => item.roles.includes("Admin"))
-                .map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.full_name}
-                  </option>
-                ))}
-            </select>
-            <button
-              className="btn-primary w-full"
-              type="button"
-              disabled={assign.isPending || !assigneeId}
-              onClick={() => assign.mutate({})}
-            >
-              {assign.isPending ? "Saving…" : "Save assignment"}
-            </button>
-            {user?.id && (
+          {canComplete && (
+            <div className="space-y-2 border-b border-edge p-5">
               <button
-                className="btn-ghost"
+                className="btn-primary w-full"
+                type="button"
+                disabled={changeStatus.isPending}
+                onClick={() => changeStatus.mutate("RESOLVED")}
+              >
+                {changeStatus.isPending ? "Saving…" : "Mark resolved"}
+              </button>
+            </div>
+          )}
+          {canAssign && (
+            <div className="space-y-3 border-b border-edge p-5">
+              <p className="text-sm font-medium">Assign to</p>
+              <select className="input" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
+                <PromptOption label="Select admin" />
+                {(users.data?.items ?? [])
+                  .filter((item) => item.roles.includes("Admin"))
+                  .map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.full_name}
+                    </option>
+                  ))}
+              </select>
+              <button
+                className="btn-secondary w-full"
+                type="button"
+                disabled={assign.isPending || !assigneeId}
+                onClick={() => assign.mutate({})}
+              >
+                {assign.isPending ? "Saving…" : "Save assignment"}
+              </button>
+              {user?.id && (
+                <button
+                  className="btn-ghost"
+                  type="button"
+                  disabled={assign.isPending}
+                  onClick={() => {
+                    setAssigneeId(user.id);
+                    assign.mutate({ agent_id: user.id });
+                  }}
+                >
+                  Assign to me
+                </button>
+              )}
+            </div>
+          )}
+          {canRelease && (
+            <div className="space-y-3 border-b border-edge p-5">
+              <p className="text-sm font-medium">Assignment</p>
+              <p className="text-sm leading-6 text-muted">
+                This ticket is assigned to {ticket.assigned_agent?.full_name}. Return it to the unassigned
+                queue if you will not take it.
+              </p>
+              <button
+                className="btn-secondary w-full"
                 type="button"
                 disabled={assign.isPending}
-                onClick={() => {
-                  setAssigneeId(user.id);
-                  assign.mutate({ agent_id: user.id });
-                }}
+                onClick={() => assign.mutate({ agent_id: null })}
               >
-                Assign to me
+                {assign.isPending ? "Saving…" : "Return to unassigned"}
               </button>
-            )}
-          </div>
-        )}
+            </div>
+          )}
+          {moveStatuses.length > 0 && (
+            <div className="p-5">
+              <p className="text-sm font-medium">Status</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {moveStatuses.map((status) => (
+                  <button
+                    key={status}
+                    className="btn-secondary text-xs"
+                    type="button"
+                    disabled={changeStatus.isPending}
+                    onClick={() => changeStatus.mutate(status)}
+                  >
+                    {statusLabel(status)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </aside>
     </div>
   );

@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "./nav";
 import { api, clearTokens, getAccessToken, setTokens } from "./api";
 import type { TokenResponse, User } from "./types";
 

@@ -95,6 +95,9 @@ class Settings(BaseSettings):
     smtp_from_email: str = "noreply@localhost"
     smtp_from_name: str = "IT Support"
     smtp_use_tls: bool = True
+    email_enabled: bool = False
+    mailer_url: str = "http://127.0.0.1:3010"
+    mailer_token: str = ""
     allowed_email_domains: str = ""
     email_check_deliverability: bool = True
     verification_code_ttl_minutes: int = 10
@@ -112,6 +115,10 @@ class Settings(BaseSettings):
     @property
     def is_development(self) -> bool:
         return self.app_env.lower() in {"development", "dev", "local", "test"}
+
+    @property
+    def email_sending_enabled(self) -> bool:
+        return self.email_enabled and bool(self.smtp_host.strip()) and self.app_env.lower() != "test"
 
     @property
     def allowed_email_domain_list(self) -> list[str]:

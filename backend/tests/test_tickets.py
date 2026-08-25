@@ -105,6 +105,30 @@ async def test_admin_sees_unassigned_and_can_assign(client: AsyncClient) -> None
 
 
 @pytest.mark.asyncio
+async def test_admin_can_release_assigned_ticket(client: AsyncClient) -> None:
+    employee = await _tokens(client, "employee")
+    created = await _create_ticket(client, employee["access_token"])
+    admin = await _tokens(client, "admin")
+    me = (await client.get("/api/v1/users/me", headers=auth_header(admin["access_token"]))).json()
+    assigned = await client.post(
+        f"/api/v1/tickets/{created['id']}/assign",
+        json={"agent_id": me["id"], "version": created["version"]},
+        headers=auth_header(admin["access_token"]),
+    )
+    assert assigned.status_code == 200
+
+    released = await client.post(
+        f"/api/v1/tickets/{created['id']}/assign",
+        json={"agent_id": None, "version": assigned.json()["version"]},
+        headers=auth_header(admin["access_token"]),
+    )
+    assert released.status_code == 200, released.text
+    body = released.json()
+    assert body["assigned_agent"] is None
+    assert body["status"] == "OPEN"
+
+
+@pytest.mark.asyncio
 async def test_workflow_valid_and_invalid_transitions(client: AsyncClient) -> None:
     employee = await _tokens(client, "employee")
     created = await _create_ticket(client, employee["access_token"])
@@ -147,6 +171,41 @@ async def test_workflow_valid_and_invalid_transitions(client: AsyncClient) -> No
     )
     assert invalid.status_code == 409
     assert invalid.json()["error"]["code"] == "INVALID_STATUS_TRANSITION"
+
+
+@pytest.mark.asyncio
+async def test_admin_can_complete_assigned_ticket(client: AsyncClient) -> None:
+    employee = await _tokens(client, "employee")
+    created = await _create_ticket(client, employee["access_token"])
+    admin = await _tokens(client, "admin")
+    me = (await client.get("/api/v1/users/me", headers=auth_header(admin["access_token"]))).json()
+    assigned = await client.post(
+        f"/api/v1/tickets/{created['id']}/assign",
+        json={"agent_id": me["id"]},
+        headers=auth_header(admin["access_token"]),
+    )
+    assert assigned.status_code == 200
+    assert assigned.json()["status"] == "ASSIGNED"
+
+    completed = await client.post(
+        f"/api/v1/tickets/{created['id']}/status",
+        json={
+            "status": "RESOLVED",
+            "version": assigned.json()["version"],
+        },
+        headers=auth_header(admin["access_token"]),
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "RESOLVED"
+
+    listed = await client.get(
+        "/api/v1/tickets",
+        params=[("status", "RESOLVED"), ("status", "CLOSED")],
+        headers=auth_header(admin["access_token"]),
+    )
+    assert listed.status_code == 200
+    ids = {item["id"] for item in listed.json()["items"]}
+    assert created["id"] in ids
 
 
 @pytest.mark.asyncio

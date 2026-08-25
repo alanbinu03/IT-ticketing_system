@@ -30,6 +30,7 @@ Services:
 | Redis | localhost:6379 |
 | MinIO API | http://localhost:9000 |
 | MinIO console | http://localhost:9001 |
+| Mailer (Nodemailer SMTP) | http://localhost:3010/health |
 
 On first backend start the container runs `alembic upgrade head`. Seed separately:
 
@@ -67,6 +68,18 @@ cd frontend
 npm install
 npm run dev
 ```
+
+## Mailer locally (Nodemailer)
+
+OTP and ticket emails are sent by the Node mailer, not Python `smtplib`. With `SMTP_HOST` set, start it next to the API:
+
+```bash
+cd mailer
+npm install
+npm start
+```
+
+Confirm SMTP credentials with `npm run verify`. The API posts to `MAILER_URL` (default `http://127.0.0.1:3010`).
 
 ## Tests
 

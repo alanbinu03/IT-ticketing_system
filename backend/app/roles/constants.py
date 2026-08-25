@@ -21,6 +21,7 @@ PERMISSIONS: tuple[tuple[str, str, str], ...] = (
     ("user.create", "Create users", "Create user accounts."),
     ("user.update", "Update users", "Update user profiles."),
     ("user.disable", "Disable users", "Deactivate user accounts."),
+    ("user.delete", "Delete users", "Permanently delete user accounts."),
     ("role.manage", "Manage roles", "Create roles and assign permissions."),
     ("team.manage", "Manage teams", "Create IT teams and memberships."),
     ("department.manage", "Manage departments", "Create and update departments."),

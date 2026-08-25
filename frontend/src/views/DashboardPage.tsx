@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import { useAuth } from "../lib/auth";
 import { api } from "../lib/api";
 import type { Page } from "../lib/types";
@@ -36,32 +36,33 @@ export function DashboardPage() {
     <div className="space-y-6">
       <section className="hero-banner">
         <p className="text-sm text-white/80">{greeting()}</p>
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight">Welcome back, {user?.full_name}</h2>
-        <p className="mt-1 max-w-xl text-sm text-white/80">
+        <h2 className="mt-2 text-[1.75rem] font-semibold leading-8 tracking-tight">Welcome back, {user?.full_name}</h2>
+        <p className="mt-2 max-w-xl text-sm leading-6 text-white/80">
           {canSeeQueue
             ? "See what needs attention, assign work, and keep the queue moving."
             : "Track your requests and follow updates from IT."}
         </p>
       </section>
       <div className={`grid gap-4 ${canSeeQueue ? "md:grid-cols-3" : "md:grid-cols-2"}`}>
-        <Link to="/profile" className="stat-card card p-4">
-          <p className="text-xs uppercase tracking-wide text-muted">Department</p>
-          <p className="mt-1 text-lg font-semibold">{user?.department?.name ?? "Unassigned"}</p>
+        <Link to="/profile" className="stat-card card p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Department</p>
+          <p className="mt-3 text-lg font-semibold leading-6">{user?.department?.name ?? "Unassigned"}</p>
+          <p className="mt-1 text-xs text-muted">View your profile</p>
         </Link>
-        <Link to="/tickets" className="stat-card card p-4">
-          <p className="text-xs uppercase tracking-wide text-muted">My tickets</p>
-          <p className="mt-1 text-2xl font-semibold">{summary.data?.my_tickets ?? "—"}</p>
+        <Link to="/tickets" className="stat-card card p-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">My tickets</p>
+          <p className="mt-3 text-2xl font-semibold leading-7 tabular-nums">{summary.data?.my_tickets ?? "—"}</p>
           <p className="mt-1 text-xs text-muted">{summary.data?.open_mine ?? 0} still open</p>
         </Link>
         {canSeeQueue && (
-          <Link to="/agent/my-queue" className="stat-card card p-4">
-            <p className="text-xs uppercase tracking-wide text-muted">Assigned to me</p>
-            <p className="mt-1 text-2xl font-semibold">{summary.data?.assigned_to_me ?? "—"}</p>
+          <Link to="/agent/my-queue" className="stat-card card p-5">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Assigned to me</p>
+            <p className="mt-3 text-2xl font-semibold leading-7 tabular-nums">{summary.data?.assigned_to_me ?? "—"}</p>
             <p className="mt-1 text-xs text-muted">{summary.data?.unassigned ?? 0} unassigned</p>
           </Link>
         )}
       </div>
-      <div className="flex flex-wrap gap-3 text-sm">
+      <div className="flex flex-wrap gap-3">
         <Link className="btn-primary" to="/tickets/new">
           New ticket
         </Link>
@@ -71,6 +72,11 @@ export function DashboardPage() {
         {canSeeQueue && (
           <Link className="btn-secondary" to="/agent/unassigned">
             Unassigned queue
+          </Link>
+        )}
+        {canSeeQueue && (
+          <Link className="btn-secondary" to="/agent/completed">
+            Completed
           </Link>
         )}
       </div>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "../lib/nav";
 import { api } from "../lib/api";
 
 type NotificationItem = {
@@ -96,9 +96,19 @@ export function NotificationBell() {
       <button
         type="button"
         className="icon-btn relative"
+        aria-label={unread > 0 ? `${unread} unread notifications` : "Notifications"}
+        title="Notifications"
         onClick={() => setOpen((value) => !value)}
       >
-        Alerts
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path
+            d="M6.4 9.6a5.6 5.6 0 1 1 11.2 0c0 3.2 1.1 4.6 1.8 5.4.3.3.1.9-.4.9H5a.6.6 0 0 1-.4-.9c.7-.8 1.8-2.2 1.8-5.4Z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+          <path d="M10 18.5a2 2 0 0 0 4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        </svg>
         {unread > 0 && (
           <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-red-500 px-1 text-[10px] font-semibold text-white">
             {unread > 9 ? "9+" : unread}
@@ -106,8 +116,8 @@ export function NotificationBell() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-xl border border-edge bg-surface shadow-xl">
-          <div className="flex items-center justify-between border-b border-edge px-3 py-2">
+        <div className="absolute right-0 z-30 mt-2 w-80 overflow-hidden rounded-2xl border border-edge bg-surface shadow-xl">
+          <div className="flex h-12 items-center justify-between border-b border-edge px-4">
             <p className="text-sm font-medium">Notifications</p>
             {unread > 0 && (
               <button
@@ -126,12 +136,12 @@ export function NotificationBell() {
             )}
           </div>
           <ul className="max-h-80 overflow-y-auto">
-            {items.length === 0 && <li className="px-3 py-4 text-sm text-muted">No notifications yet.</li>}
+            {items.length === 0 && <li className="px-4 py-4 text-sm text-muted">No notifications yet.</li>}
             {items.map((item) => (
               <li key={item.id}>
                 <button
                   type="button"
-                  className={`w-full px-3 py-2 text-left text-sm hover:bg-accent-soft ${item.read_at ? "opacity-70" : ""}`}
+                  className={`w-full bg-transparent px-4 py-3 text-left text-sm hover:bg-accent-soft ${item.read_at ? "opacity-70" : ""}`}
                   onClick={() => void openItem(item)}
                 >
                   <p className="font-medium">{item.title}</p>

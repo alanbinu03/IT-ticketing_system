@@ -1,11 +1,10 @@
 import { useAuth } from "../lib/auth";
-import { Avatar, PageHeader } from "../components/ui";
+import { Avatar } from "../components/ui";
 
 export function ProfilePage() {
   const { user } = useAuth();
   return (
-    <div className="mx-auto max-w-2xl space-y-5">
-      <PageHeader title="Profile" description="How this workspace sees you." />
+    <div className="mx-auto max-w-2xl space-y-6">
       <section className="card p-6">
         <div className="flex items-center gap-4">
           <Avatar name={user?.full_name} size="lg" />
@@ -28,7 +27,7 @@ export function ProfilePage() {
 
 function Row({ label, value }: { label: string; value?: string }) {
   return (
-    <div className="grid grid-cols-3 gap-4 px-5 py-3.5 text-sm">
+    <div className="grid grid-cols-3 gap-4 px-6 py-4 text-sm">
       <dt className="text-muted">{label}</dt>
       <dd className="col-span-2 font-medium">{value}</dd>
     </div>

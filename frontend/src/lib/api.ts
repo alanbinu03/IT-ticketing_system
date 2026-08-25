@@ -12,6 +12,7 @@ function apiBase(): string {
 export const api = axios.create({
   baseURL: apiBase(),
   headers: { "Content-Type": "application/json" },
+  paramsSerializer: { indexes: null },
 });
 
 export function getAccessToken(): string | null {
@@ -33,6 +34,9 @@ export function clearTokens(): void {
 }
 
 api.interceptors.request.use((config) => {
+  if (typeof FormData !== "undefined" && config.data instanceof FormData) {
+    config.headers.delete("Content-Type");
+  }
   const token = getAccessToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -48,7 +52,7 @@ api.interceptors.response.use(
     const original = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
     const status = error.response?.status;
     const url = original?.url ?? "";
-    if (status === 401 && !original?._retry && !url.includes("/auth/login") && !url.includes("/auth/admin/login") && !url.includes("/auth/refresh") && !url.includes("/auth/register")) {
+    if (status === 401 && !original?._retry && !url.includes("/auth/login") && !url.includes("/auth/admin/login") && !url.includes("/auth/refresh")) {
       const refreshToken = getRefreshToken();
       if (!refreshToken) {
         clearTokens();

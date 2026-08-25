@@ -38,7 +38,7 @@ DEPARTMENTS = (
     ("Administration", "ADM", "Administration"),
     ("Sales", "SAL", "Sales"),
     ("IT", "IT", "Information technology"),
-    ("General", "GEN", "Default department for self-registered employees"),
+    ("General", "GEN", "Default department for provisioned employees"),
 )
 
 IT_TEAMS = (
@@ -278,6 +278,9 @@ async def seed(session: AsyncSession) -> None:
         await session.execute(delete(UserRole).where(UserRole.user_id == leftover.id))
 
     await session.commit()
+    from app.auth.rbac import invalidate_role_permission_cache
+
+    await invalidate_role_permission_cache()
     logger.info("seed_completed")
 
 

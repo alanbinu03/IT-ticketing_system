@@ -1,14 +1,10 @@
 from __future__ import annotations
 
-import re
-from datetime import UTC, datetime, timedelta
-
 import pytest
 from httpx import AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.models import EmailVerification
 from app.config import get_settings
 from app.email.models import EmailDelivery
 from app.email.service import EmailService, get_outbox
@@ -16,75 +12,57 @@ from app.users.models import User
 from tests.conftest import auth_header, login, unique_email
 
 
-def latest_otp(email: str) -> str:
-    for item in reversed(get_outbox()):
-        if item.to_email == email:
-            match = re.search(r"\b(\d{6})\b", item.body)
-            if match:
-                return match.group(1)
-    raise AssertionError(f"No OTP email found for {email}")
-
-
-async def register_employee(client: AsyncClient, email: str, password: str = "ChangeMe!New123") -> None:
-    started = await client.post("/api/v1/auth/register/request-otp", json={"email": email})
-    assert started.status_code == 200, started.text
-    verified = await client.post(
-        "/api/v1/auth/register/verify-otp",
-        json={"email": email, "otp": latest_otp(email)},
+@pytest.mark.asyncio
+async def test_self_registration_is_disabled(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/register/request-otp", json={"email": unique_email("signup")}
     )
-    assert verified.status_code == 200, verified.text
-    completed = await client.post(
-        "/api/v1/auth/register/complete",
-        json={
-            "registration_token": verified.json()["registration_token"],
-            "full_name": "Alex Rivera",
-            "password": password,
-            "role": "SYSTEM_ADMIN",
-        },
+    assert response.status_code == 410
+    assert response.json()["error"]["code"] == "REGISTRATION_DISABLED"
+
+
+@pytest.mark.asyncio
+async def test_unknown_email_cannot_login(client: AsyncClient) -> None:
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": unique_email("missing"), "password": "ValidPass123"},
     )
-    assert completed.status_code == 200, completed.text
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
 
 
 @pytest.mark.asyncio
-async def test_register_requires_valid_email(client: AsyncClient) -> None:
-    response = await client.post("/api/v1/auth/register/request-otp", json={"email": "not-an-email"})
-    assert response.status_code in {400, 422}
+async def test_wrong_password_cannot_login(client: AsyncClient) -> None:
+    settings = get_settings()
+    response = await client.post(
+        "/api/v1/auth/login",
+        json={"email": settings.seed_employee_email, "password": "WrongPass123"},
+    )
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "INVALID_CREDENTIALS"
 
 
 @pytest.mark.asyncio
-async def test_register_lists_allowed_domains(client: AsyncClient) -> None:
-    response = await client.get("/api/v1/auth/register/allowed-domains")
-    assert response.status_code == 200
-    assert "example.com" in response.json()["domains"]
-    assert "company.com" in response.json()["domains"]
+async def test_admin_import_csv_then_user_can_login(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    email = unique_email("sheet")
+    csv_body = f"name,email,password\nAlex Rivera,{email},ChangeMe!New123\n"
+    imported = await client.post(
+        "/api/v1/users/import",
+        headers=auth_header(admin["access_token"]),
+        files={"file": ("users.csv", csv_body.encode("utf-8"), "text/csv")},
+    )
+    assert imported.status_code == 200, imported.text
+    body = imported.json()
+    assert body["created"] == 1
+    assert body["skipped"] == 0
 
-
-@pytest.mark.asyncio
-async def test_register_rejects_public_and_fake_domains(client: AsyncClient) -> None:
-    for email in ("person@gmail.com", "person@yahoo.com", "attacker@company.com.fake-domain.com"):
-        response = await client.post("/api/v1/auth/register/request-otp", json={"email": email})
-        assert response.status_code == 400, email
-        body = response.json()["error"]
-        assert body["code"] == "EMAIL_DOMAIN_NOT_ALLOWED"
-        assert "@example.com" in body["message"] or "company email" in body["message"].lower()
-
-
-@pytest.mark.asyncio
-async def test_register_accepts_company_and_example_domains(client: AsyncClient) -> None:
-    email = f"yash-{unique_email('co').split('@')[0]}@company.com"
-    response = await client.post("/api/v1/auth/register/request-otp", json={"email": email})
-    assert response.status_code == 200, response.text
-    assert "verification code" in response.json()["message"].lower()
-
-
-@pytest.mark.asyncio
-async def test_employee_register_verify_complete_and_login(client: AsyncClient, db_session: AsyncSession) -> None:
-    email = unique_email("signup")
-    await register_employee(client, email)
     result = await db_session.execute(select(User).where(User.email == email))
     user = result.scalar_one()
-    await db_session.refresh(user)
-    assert user.email_is_verified is True
+    assert user.full_name == "Alex Rivera"
 
     tokens = await login(client, email, "ChangeMe!New123")
     assert tokens["user"]["email"] == email
@@ -93,71 +71,70 @@ async def test_employee_register_verify_complete_and_login(client: AsyncClient, 
 
 
 @pytest.mark.asyncio
-async def test_duplicate_registration_is_generic(client: AsyncClient) -> None:
+async def test_login_accepts_spaced_and_display_name_email(client: AsyncClient) -> None:
     settings = get_settings()
+    spaced = f"  {settings.seed_employee_email.replace('@', ' @ ')}  "
     response = await client.post(
-        "/api/v1/auth/register/request-otp",
-        json={"email": settings.seed_employee_email},
+        "/api/v1/auth/login",
+        json={"email": spaced, "password": settings.seed_employee_password},
     )
-    assert response.status_code == 200
-    assert "If the email is eligible" in response.json()["message"]
+    assert response.status_code == 200, response.text
+    wrapped = f"Employee Name <{settings.seed_employee_email}>"
+    wrapped_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": wrapped, "password": settings.seed_employee_password},
+    )
+    assert wrapped_login.status_code == 200, wrapped_login.text
 
 
 @pytest.mark.asyncio
-async def test_incorrect_and_expired_otp_and_reuse(client: AsyncClient, db_session: AsyncSession) -> None:
-    email = unique_email("otp")
-    await client.post("/api/v1/auth/register/request-otp", json={"email": email})
-    wrong = await client.post("/api/v1/auth/register/verify-otp", json={"email": email, "otp": "000000"})
-    assert wrong.status_code == 401
-
-    otp = latest_otp(email)
-    first = await client.post("/api/v1/auth/register/verify-otp", json={"email": email, "otp": otp})
-    assert first.status_code == 200
-    reused = await client.post("/api/v1/auth/register/verify-otp", json={"email": email, "otp": otp})
-    assert reused.status_code == 401
-
-    expired_email = unique_email("expired")
-    await client.post("/api/v1/auth/register/request-otp", json={"email": expired_email})
-    result = await db_session.execute(
-        select(EmailVerification)
-        .where(EmailVerification.email == expired_email)
-        .order_by(EmailVerification.created_at.desc())
-    )
-    record = result.scalars().first()
-    assert record is not None
-    record.expires_at = datetime.now(UTC) - timedelta(minutes=1)
-    await db_session.commit()
-    expired = await client.post(
-        "/api/v1/auth/register/verify-otp",
-        json={"email": expired_email, "otp": latest_otp(expired_email)},
-    )
-    assert expired.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_otp_attempt_limit(client: AsyncClient) -> None:
-    email = unique_email("limit")
-    await client.post("/api/v1/auth/register/request-otp", json={"email": email})
-    for _ in range(5):
-        await client.post("/api/v1/auth/register/verify-otp", json={"email": email, "otp": "111111"})
-    blocked = await client.post(
-        "/api/v1/auth/register/verify-otp",
-        json={"email": email, "otp": latest_otp(email)},
-    )
-    assert blocked.status_code == 401
-
-
-@pytest.mark.asyncio
-async def test_cannot_complete_without_verification(client: AsyncClient) -> None:
-    response = await client.post(
-        "/api/v1/auth/register/complete",
+async def test_admin_create_user_accepts_display_name_email(client: AsyncClient) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    email = unique_email("create")
+    created = await client.post(
+        "/api/v1/users",
+        headers=auth_header(admin["access_token"]),
         json={
-            "registration_token": "not-a-real-token-value-here",
-            "full_name": "Alex Rivera",
-            "password": "ChangeMe!New123",
+            "email": f"New Person < {email} >",
+            "password": "ValidPass123",
+            "full_name": "New Person",
         },
     )
-    assert response.status_code == 401
+    assert created.status_code == 201, created.text
+    assert created.json()["email"] == email
+    tokens = await login(client, f" {email} ", "ValidPass123")
+    assert tokens["user"]["email"] == email
+
+
+@pytest.mark.asyncio
+async def test_import_short_password_is_not_called_invalid_email(client: AsyncClient) -> None:
+    settings = get_settings()
+    admin = await login(client, settings.seed_admin_email, settings.seed_admin_password)
+    email = unique_email("shortpw")
+    csv_body = f"name,email,password\nShort Pass,{email},abc\n"
+    imported = await client.post(
+        "/api/v1/users/import",
+        headers=auth_header(admin["access_token"]),
+        files={"file": ("users.csv", csv_body.encode("utf-8"), "text/csv")},
+    )
+    assert imported.status_code == 200, imported.text
+    body = imported.json()
+    assert body["created"] == 0
+    assert body["errors"]
+    assert "Password" in body["errors"][0]["message"]
+
+
+@pytest.mark.asyncio
+async def test_employee_cannot_import_users(client: AsyncClient) -> None:
+    settings = get_settings()
+    employee = await login(client, settings.seed_employee_email, settings.seed_employee_password)
+    response = await client.post(
+        "/api/v1/users/import",
+        headers=auth_header(employee["access_token"]),
+        files={"file": ("users.csv", b"name,email,password\nA,a@example.com,ValidPass123\n", "text/csv")},
+    )
+    assert response.status_code == 403
 
 
 @pytest.mark.asyncio
@@ -224,7 +201,9 @@ async def test_new_ticket_queues_admin_email(client: AsyncClient, db_session: As
 
 
 @pytest.mark.asyncio
-async def test_smtp_failure_does_not_fail_ticket(client: AsyncClient, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_smtp_failure_does_not_fail_ticket(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def boom(*_args, **_kwargs):
         raise RuntimeError("smtp down")
 
@@ -245,7 +224,37 @@ async def test_smtp_failure_does_not_fail_ticket(client: AsyncClient, monkeypatc
 
 
 @pytest.mark.asyncio
-async def test_duplicate_ticket_email_is_idempotent(client: AsyncClient, db_session: AsyncSession) -> None:
+async def test_email_service_skips_mailer_in_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("Nodemailer should not be called during tests")
+
+    monkeypatch.setattr(EmailService, "_post_mailer", boom)
+    await EmailService.send("signup@example.com", "Verify", "code 123456")
+    assert get_outbox()[-1].to_email == "signup@example.com"
+
+
+@pytest.mark.asyncio
+async def test_email_service_skips_when_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*_args, **_kwargs):
+        raise AssertionError("Nodemailer should not be called while email is disabled")
+
+    monkeypatch.setattr("app.email.service.get_settings", lambda: type("S", (), {
+        "email_sending_enabled": False,
+        "email_enabled": False,
+        "smtp_host": "smtp.gmail.com",
+        "app_env": "development",
+        "mailer_url": "http://127.0.0.1:3010",
+        "mailer_token": "",
+    })())
+    monkeypatch.setattr(EmailService, "_post_mailer", boom)
+    await EmailService.send("ops@example.com", "Ticket", "body")
+    assert get_outbox()[-1].to_email == "ops@example.com"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_ticket_email_is_idempotent(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
     from uuid import UUID
 
     from app.email.queue import enqueue_email

@@ -20,6 +20,8 @@ os.environ.setdefault(
     "postgresql+asyncpg://ticketing:ticketing@localhost:5433/ticketing",
 )
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("SMTP_HOST", "")
+os.environ.setdefault("MAILER_URL", "http://127.0.0.1:3010")
 os.environ.setdefault("SEED_ADMIN_EMAIL", "hardik@example.com")
 os.environ.setdefault("SEED_ADMIN_PASSWORD", "ChangeMe!Admin123")
 os.environ.setdefault("SEED_ADMIN_RONALD_EMAIL", "ronald@example.com")

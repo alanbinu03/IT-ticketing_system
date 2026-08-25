@@ -224,21 +224,45 @@ class TicketService:
         needed = "ticket.reassign" if currently_assigned else "ticket.assign"
         if not auth.has(needed):
             raise ForbiddenError()
-        await self._validate_assignees(data.team_id, data.agent_id)
-        if data.agent_id is None:
-            raise ConflictError("Select an admin to assign this ticket to.")
+        releasing = data.agent_id is None and data.team_id is None
+        if releasing:
+            if not currently_assigned:
+                return ticket
+            current = TicketStatus(ticket.status)
+            if current in {
+                TicketStatus.RESOLVED,
+                TicketStatus.CLOSED,
+                TicketStatus.CANCELLED,
+                TicketStatus.REJECTED,
+            }:
+                raise ConflictError("This ticket can no longer be released.")
+        else:
+            await self._validate_assignees(data.team_id, data.agent_id)
+            if data.agent_id is None:
+                raise ConflictError("Select an admin to assign this ticket to.")
         previous_team, previous_agent = ticket.assigned_team_id, ticket.assigned_agent_id
         if previous_team == data.team_id and previous_agent == data.agent_id:
             return ticket
         now = datetime.now(UTC)
         ticket.assigned_team_id = data.team_id
         ticket.assigned_agent_id = data.agent_id
-        if ticket.assigned_at is None:
+        if releasing:
+            ticket.assigned_at = None
+        elif ticket.assigned_at is None:
             ticket.assigned_at = now
         current = TicketStatus(ticket.status)
-        nxt = self.workflow.assignment_status(current)
+        nxt = (
+            self.workflow.unassignment_status(current)
+            if releasing
+            else self.workflow.assignment_status(current)
+        )
         if nxt and nxt != current:
-            await self._apply_status(ticket, nxt, auth.user.id, reason="Assigned")
+            await self._apply_status(
+                ticket,
+                nxt,
+                auth.user.id,
+                reason="Returned to unassigned" if releasing else "Assigned",
+            )
         ticket.updated_by = auth.user.id
         ticket.version += 1
         await self.repo.add_assignment(
@@ -254,7 +278,7 @@ class TicketService:
         enqueue_event(
             self.session,
             DomainEvent(
-                name="ticket.assigned",
+                name="ticket.unassigned" if releasing else "ticket.assigned",
                 entity_type="ticket",
                 entity_id=ticket.id,
                 actor_id=auth.user.id,
@@ -282,12 +306,13 @@ class TicketService:
             TicketStatus.CLOSED: "ticket.close",
             TicketStatus.REOPENED: "ticket.reopen",
         }.get(target, "ticket.update")
+        if current in {TicketStatus.RESOLVED, TicketStatus.CLOSED} and target in {
+            TicketStatus.IN_PROGRESS,
+            TicketStatus.REOPENED,
+        }:
+            required = "ticket.reopen"
         if not auth.has(required):
             raise ForbiddenError()
-        if target == TicketStatus.RESOLVED and not (
-            data.resolution_summary or ticket.resolution_summary
-        ):
-            raise ConflictError("A resolution summary is required to resolve a ticket.")
         await self._apply_status(
             ticket,
             target,
@@ -348,7 +373,10 @@ class TicketService:
                 ticket.resolution_summary = resolution_summary.strip()
         if target == TicketStatus.CLOSED:
             ticket.closed_at = now
-        if target == TicketStatus.REOPENED:
+        if target == TicketStatus.REOPENED or (
+            target == TicketStatus.IN_PROGRESS
+            and current in {TicketStatus.RESOLVED, TicketStatus.CLOSED, TicketStatus.REOPENED}
+        ):
             ticket.resolved_at = None
             ticket.closed_at = None
         await self.repo.add_status_history(

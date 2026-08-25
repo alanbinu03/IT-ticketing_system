@@ -8,6 +8,11 @@ export default defineConfig({
   server: {
     host: "0.0.0.0",
     port: 5173,
+    strictPort: true,
+    allowedHosts: true,
+    hmr: {
+      protocol: "ws",
+    },
     proxy: {
       "/api": { target: apiProxy, changeOrigin: true },
       "/health": { target: apiProxy, changeOrigin: true },

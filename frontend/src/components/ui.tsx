@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link } from "../lib/nav";
 import type { TicketPriority, TicketStatus } from "../lib/tickets";
-import { PRIORITY_LABEL, priorityClass, statusClass } from "../lib/tickets";
+import { PRIORITY_LABEL, priorityClass, statusClass, statusLabel } from "../lib/tickets";
 
 export function initials(name?: string | null): string {
   const parts = (name ?? "?").trim().split(/\s+/).filter(Boolean);
@@ -33,19 +33,38 @@ export function PageHeader({
   actions,
 }: {
   eyebrow?: string;
-  title: string;
+  title?: string;
   description?: string;
   actions?: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        {eyebrow && <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted">{eyebrow}</p>}
-        <h2 className="mt-1 text-2xl font-semibold tracking-tight">{title}</h2>
-        {description && <p className="mt-1 max-w-xl text-sm text-muted">{description}</p>}
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="min-w-0">
+        {eyebrow && <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted">{eyebrow}</p>}
+        {title && <h2 className="text-lg font-semibold leading-6 tracking-tight">{title}</h2>}
+        {description && <p className="max-w-2xl text-sm leading-6 text-muted">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
     </div>
+  );
+}
+
+export function PromptOption({
+  label,
+  selected = "",
+  clearable = false,
+}: {
+  label: string;
+  selected?: string;
+  clearable?: boolean;
+}) {
+  return (
+    <>
+      <option value="" disabled hidden>
+        {label}
+      </option>
+      {clearable && selected ? <option value="">{label}</option> : null}
+    </>
   );
 }
 
@@ -69,7 +88,7 @@ export function EmptyState({
 
 export function StatusBadge({ status }: { status: TicketStatus }) {
   return (
-    <span className={`badge ${statusClass(status)}`}>{status.replaceAll("_", " ")}</span>
+    <span className={`badge ${statusClass(status)}`}>{statusLabel(status)}</span>
   );
 }
 

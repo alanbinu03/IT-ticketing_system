@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.email_validation import normalize_register_email
+from app.auth.email_validation import clean_account_email, normalize_register_email
 from app.auth.models import EmailVerification, RefreshToken
 from app.auth.passwords import validate_password
 from app.auth.rbac import cache_user_permissions, load_cached_permissions
@@ -65,7 +65,10 @@ class AuthService:
         ip_address: str | None,
         user_agent: str | None,
     ) -> tuple[str, str, int, UserMe]:
-        email_norm = email.lower().strip()
+        try:
+            email_norm = clean_account_email(email)
+        except AppError:
+            raise UnauthorizedError("Invalid email or password.", code="INVALID_CREDENTIALS") from None
         await self._reject_if_rate_limited(email_norm, ip_address)
         user = await self.users.get_by_email(email_norm)
         if user is None or not verify_password(password, user.password_hash):
@@ -73,11 +76,6 @@ class AuthService:
             raise UnauthorizedError("Invalid email or password.", code="INVALID_CREDENTIALS")
         if not user.is_active:
             raise UnauthorizedError("This account has been disabled.", code="ACCOUNT_DISABLED")
-        if not user.email_is_verified:
-            raise UnauthorizedError(
-                "Verify your email before signing in.",
-                code="EMAIL_NOT_VERIFIED",
-            )
         await self._clear_login_rate_limit(email_norm, ip_address)
         if needs_rehash(user.password_hash):
             user.password_hash = hash_password(password)

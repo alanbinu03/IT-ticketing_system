@@ -34,40 +34,47 @@ export function DepartmentsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-semibold tracking-tight">Departments</h2>
-        <p className="mt-1 text-sm text-muted">Organize requesters by where they work.</p>
-      </div>
       <form
-        className="card flex flex-wrap gap-3 p-4"
+        className="card grid items-end gap-4 p-5 sm:grid-cols-[2fr_1fr_2fr_auto]"
         onSubmit={form.handleSubmit((values) => createDept.mutate(values))}
       >
-        <input className="input max-w-xs" placeholder="Name" {...form.register("name")} />
-        <input className="input max-w-[8rem]" placeholder="Code" {...form.register("code")} />
-        <input className="input max-w-xs" placeholder="Description" {...form.register("description")} />
-        <button className="btn-primary" type="submit" disabled={createDept.isPending}>
+        <label className="field-label">
+          Name
+          <input className="input" placeholder="Finance" {...form.register("name")} />
+        </label>
+        <label className="field-label">
+          Code
+          <input className="input" placeholder="FIN" {...form.register("code")} />
+        </label>
+        <label className="field-label">
+          Description
+          <input className="input" placeholder="Optional" {...form.register("description")} />
+        </label>
+        <button className="btn-primary w-full sm:w-auto" type="submit" disabled={createDept.isPending}>
           {createDept.isPending ? "Adding…" : "Add department"}
         </button>
-        {error && <p className="w-full text-sm text-red-500">{error}</p>}
+        {error && <p className="text-sm text-red-500 sm:col-span-4">{error}</p>}
       </form>
-      <table className="card min-w-full overflow-hidden text-left text-sm">
-        <thead className="bg-accent-soft text-muted">
-          <tr>
-            <th className="px-4 py-2 font-medium">Name</th>
-            <th className="px-4 py-2 font-medium">Code</th>
-            <th className="px-4 py-2 font-medium">Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {departments.data?.items.map((dept) => (
-            <tr key={dept.id} className="border-t border-edge hover:bg-accent-soft">
-              <td className="px-4 py-2">{dept.name}</td>
-              <td className="px-4 py-2">{dept.code}</td>
-              <td className="px-4 py-2">{dept.is_active ? "Active" : "Inactive"}</td>
+      <div className="card overflow-x-auto">
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Code</th>
+              <th>Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {departments.data?.items.map((dept) => (
+              <tr key={dept.id} className="hover:bg-accent-soft">
+                <td>{dept.name}</td>
+                <td>{dept.code}</td>
+                <td>{dept.is_active ? "Active" : "Inactive"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

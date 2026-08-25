@@ -1,0 +1,14 @@
+{
+  "name": "it-ticketing-mailer",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "verify": "node src/verify.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "nodemailer": "^7.0.13"
+  }
+}

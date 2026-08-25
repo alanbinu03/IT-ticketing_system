@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
-from email.message import EmailMessage
 from pathlib import Path
 
 import structlog
@@ -43,26 +45,56 @@ class EmailService:
     async def send(to_email: str, subject: str, body: str, *, html: str | None = None) -> None:
         settings = get_settings()
         _outbox.append(SentEmail(to_email=to_email, subject=subject, body=body))
-        if not settings.smtp_host:
-            logger.info("email_console", to=to_email, subject=subject, body=body)
+        if not settings.email_sending_enabled:
+            logger.info("email_skipped", to=to_email, subject=subject, reason="email_disabled")
             return
-        message = EmailMessage()
-        message["Subject"] = subject
-        message["From"] = f"{settings.smtp_from_name} <{settings.smtp_from_email}>"
-        message["To"] = to_email
-        message.set_content(body)
-        if html:
-            message.add_alternative(html, subtype="html")
-        await asyncio.to_thread(EmailService._send_smtp, message, settings)
+        await EmailService._send_via_nodemailer(
+            to_email=to_email,
+            subject=subject,
+            body=body,
+            html=html,
+            settings=settings,
+        )
         logger.info("email_sent", to=to_email, subject=subject)
 
     @staticmethod
-    def _send_smtp(message: EmailMessage, settings) -> None:
-        import smtplib
+    async def _send_via_nodemailer(
+        *,
+        to_email: str,
+        subject: str,
+        body: str,
+        html: str | None,
+        settings,
+    ) -> None:
+        await asyncio.to_thread(
+            EmailService._post_mailer,
+            settings,
+            {
+                "to": to_email,
+                "subject": subject,
+                "text": body,
+                "html": html,
+            },
+        )
 
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=20) as client:
-            if settings.smtp_use_tls:
-                client.starttls()
-            if settings.smtp_username:
-                client.login(settings.smtp_username, settings.smtp_password)
-            client.send_message(message)
+    @staticmethod
+    def _post_mailer(settings, payload: dict) -> None:
+        url = f"{settings.mailer_url.rstrip('/')}/send"
+        headers = {"Content-Type": "application/json"}
+        if settings.mailer_token:
+            headers["Authorization"] = f"Bearer {settings.mailer_token}"
+        request = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=20) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"mailer returned HTTP {response.status}")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:300]
+            raise RuntimeError(f"mailer returned HTTP {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(f"mailer unreachable at {url}: {exc.reason}") from exc

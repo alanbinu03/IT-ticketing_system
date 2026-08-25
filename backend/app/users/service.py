@@ -3,19 +3,38 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.email_validation import clean_account_email
+from app.auth.passwords import validate_password
 from app.auth.rbac import invalidate_user_permission_cache
 from app.auth.repository import RefreshTokenRepository
 from app.auth.security import hash_password
 from app.common.events import DomainEvent, enqueue_event
-from app.common.exceptions import ConflictError, NotFoundError
+from app.common.exceptions import AppError, ConflictError, NotFoundError
 from app.departments.repository import DepartmentRepository
 from app.roles.constants import ROLE_EMPLOYEE
 from app.roles.repository import RoleRepository
+from app.users.import_sheet import ImportedUserRow
 from app.users.models import User
 from app.users.repository import UserRepository
 from app.users.schemas import UserCreate, UserUpdate
+
+
+def _user_create_error(exc: ValidationError) -> str:
+    parts: list[str] = []
+    for err in exc.errors():
+        field = err.get("loc", ("",))[0]
+        if field == "password":
+            parts.append("Password must be at least 8 characters.")
+        elif field == "full_name":
+            parts.append("Name is required.")
+        elif field == "email":
+            parts.append("Enter a valid email like name@company.com.")
+        else:
+            parts.append(str(err.get("msg") or "This row is invalid."))
+    return " ".join(parts) or "This row is invalid."
 
 
 def _public_user_payload(user: User) -> dict:
@@ -59,7 +78,8 @@ class UserService:
         )
 
     async def create(self, data: UserCreate, actor_id: UUID) -> User:
-        email = str(data.email).lower().strip()
+        email = clean_account_email(str(data.email))
+        validate_password(data.password)
         if await self.repo.get_by_email(email):
             raise ConflictError("A user with this email already exists.")
         if data.employee_code and await self.repo.get_by_employee_code(data.employee_code):
@@ -164,6 +184,30 @@ class UserService:
         )
         return user
 
+    async def delete(self, user_id: UUID, actor_id: UUID) -> None:
+        if user_id == actor_id:
+            raise ConflictError("You cannot delete your own account.", code="CANNOT_DELETE_SELF")
+        user = await self.get(user_id)
+        if await self.repo.has_blocking_history(user_id):
+            raise ConflictError(
+                "This account has tickets or comments, so it cannot be deleted. Disable it instead.",
+                code="USER_HAS_HISTORY",
+            )
+        previous = _public_user_payload(user)
+        await self.refresh_tokens.revoke_all_for_user(user.id)
+        await invalidate_user_permission_cache(user.id)
+        enqueue_event(
+            self.session,
+            DomainEvent(
+                name="user.deleted",
+                entity_type="user",
+                entity_id=user.id,
+                actor_id=actor_id,
+                payload={"previous": previous},
+            ),
+        )
+        await self.repo.delete(user)
+
     async def set_roles(self, user_id: UUID, role_ids: list[UUID], actor_id: UUID) -> User:
         user = await self.get(user_id)
         previous_roles = [ur.role.name for ur in user.user_roles]
@@ -187,6 +231,54 @@ class UserService:
             ),
         )
         return user
+
+    async def import_rows(self, rows: list[ImportedUserRow], actor_id: UUID) -> dict:
+        created = 0
+        skipped = 0
+        errors: list[dict] = []
+        for row in rows:
+            if not row.full_name or not row.email or not row.password:
+                skipped += 1
+                errors.append(
+                    {
+                        "row": row.row_number,
+                        "email": row.email or None,
+                        "message": "Name, email, and password are required.",
+                    }
+                )
+                continue
+            try:
+                async with self.session.begin_nested():
+                    role_ids: list[UUID] = []
+                    if row.role:
+                        role_name = row.role.strip()
+                        named = await self.roles.get_by_name(role_name)
+                        if named is None:
+                            named = await self.roles.get_by_name(role_name.title())
+                        if named is None:
+                            raise NotFoundError(f"Role '{row.role}' was not found.")
+                        role_ids = [named.id]
+                    try:
+                        payload = UserCreate(
+                            email=clean_account_email(row.email),
+                            password=row.password,
+                            full_name=row.full_name,
+                            role_ids=role_ids,
+                        )
+                    except ValidationError as exc:
+                        raise AppError("INVALID_ROW", _user_create_error(exc), 400) from exc
+                    await self.create(payload, actor_id=actor_id)
+                created += 1
+            except AppError as exc:
+                skipped += 1
+                errors.append(
+                    {
+                        "row": row.row_number,
+                        "email": row.email,
+                        "message": exc.message,
+                    }
+                )
+        return {"created": created, "skipped": skipped, "errors": errors}
 
     async def _assign_roles(
         self, user: User, role_ids: list[UUID], *, allow_empty: bool = True

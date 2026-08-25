@@ -2,25 +2,18 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import AuthContext, get_current_user, require_permission
 from app.auth.schemas import (
-    AllowedDomainsResponse,
-    CompleteRegistrationRequest,
-    CompleteRegistrationResponse,
     LoginRequest,
     LogoutRequest,
     RefreshRequest,
-    RequestOtpRequest,
-    RequestOtpResponse,
     TokenResponse,
-    VerifyOtpRequest,
-    VerifyOtpResponse,
 )
-from app.config import get_settings
 from app.auth.service import AuthService
+from app.common.exceptions import AppError
 from app.common.pagination import Page
 from app.database.session import get_db
 from app.departments.schemas import DepartmentCreate, DepartmentOut, DepartmentUpdate
@@ -36,7 +29,8 @@ from app.roles.schemas import (
 from app.roles.service import RoleService
 from app.teams.schemas import TeamCreate, TeamMemberCreate, TeamOut, TeamUpdate
 from app.teams.service import TeamService
-from app.users.schemas import UserCreate, UserMe, UserOut, UserRolesUpdate, UserUpdate
+from app.users.import_sheet import parse_user_sheet
+from app.users.schemas import UserCreate, UserImportResult, UserMe, UserOut, UserRolesUpdate, UserUpdate
 from app.users.serializers import to_team_out, to_user_out
 from app.users.service import UserService
 
@@ -111,44 +105,32 @@ async def admin_login(
     )
 
 
-@auth_router.get("/register/allowed-domains", response_model=AllowedDomainsResponse)
-async def registration_allowed_domains() -> AllowedDomainsResponse:
-    return AllowedDomainsResponse(domains=get_settings().allowed_email_domain_list)
-
-
-@auth_router.post("/register/request-otp", response_model=RequestOtpResponse)
-async def request_registration_otp(
-    payload: RequestOtpRequest,
-    request: Request,
-    session: AsyncSession = Depends(get_db),
-) -> RequestOtpResponse:
-    message = await AuthService(session).request_registration_otp(
-        str(payload.email),
-        ip_address=_client_ip(request),
+def _registration_disabled() -> None:
+    raise AppError(
+        "REGISTRATION_DISABLED",
+        "Employees cannot self-register. Ask IT for an account.",
+        410,
     )
-    return RequestOtpResponse(message=message)
 
 
-@auth_router.post("/register/verify-otp", response_model=VerifyOtpResponse)
-async def verify_registration_otp(
-    payload: VerifyOtpRequest,
-    session: AsyncSession = Depends(get_db),
-) -> VerifyOtpResponse:
-    token = await AuthService(session).verify_registration_otp(str(payload.email), payload.otp)
-    return VerifyOtpResponse(registration_token=token)
+@auth_router.get("/register/allowed-domains")
+async def registration_allowed_domains() -> None:
+    _registration_disabled()
 
 
-@auth_router.post("/register/complete", response_model=CompleteRegistrationResponse)
-async def complete_registration(
-    payload: CompleteRegistrationRequest,
-    session: AsyncSession = Depends(get_db),
-) -> CompleteRegistrationResponse:
-    await AuthService(session).complete_registration(
-        payload.registration_token,
-        payload.full_name,
-        payload.password,
-    )
-    return CompleteRegistrationResponse(message="Account created successfully")
+@auth_router.post("/register/request-otp")
+async def request_registration_otp() -> None:
+    _registration_disabled()
+
+
+@auth_router.post("/register/verify-otp")
+async def verify_registration_otp() -> None:
+    _registration_disabled()
+
+
+@auth_router.post("/register/complete")
+async def complete_registration() -> None:
+    _registration_disabled()
 
 
 @auth_router.post("/refresh", response_model=TokenResponse)
@@ -222,6 +204,20 @@ async def create_user(
     return to_user_out(user)
 
 
+@users_router.post("/import", response_model=UserImportResult)
+async def import_users(
+    auth: AuthContext = Depends(require_permission("user.create")),
+    session: AsyncSession = Depends(get_db),
+    file: UploadFile = File(...),
+) -> UserImportResult:
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise AppError("PAYLOAD_TOO_LARGE", "The user list must be smaller than 5 MB.", 413)
+    rows = parse_user_sheet(file.filename or "users.csv", content)
+    result = await UserService(session).import_rows(rows, actor_id=auth.user.id)
+    return UserImportResult.model_validate(result)
+
+
 @users_router.get("/{user_id}", response_model=UserOut)
 async def get_user(
     user_id: UUID,
@@ -252,6 +248,15 @@ async def disable_user(
     session: AsyncSession = Depends(get_db),
 ) -> UserOut:
     return to_user_out(await UserService(session).disable(user_id, actor_id=auth.user.id))
+
+
+@users_router.delete("/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(
+    user_id: UUID,
+    auth: AuthContext = Depends(require_permission("user.delete", "user.disable")),
+    session: AsyncSession = Depends(get_db),
+) -> None:
+    await UserService(session).delete(user_id, actor_id=auth.user.id)
 
 
 @users_router.put("/{user_id}/roles", response_model=UserOut)

@@ -111,3 +111,24 @@ class UserRepository:
         for role in roles:
             self.session.add(UserRole(user_id=user.id, role_id=role.id))
         await self.session.flush()
+
+    async def has_blocking_history(self, user_id: UUID) -> bool:
+        from app.comments.models import TicketComment
+        from app.tickets.models import Ticket, TicketAssignment, TicketStatusHistory
+
+        checks = (
+            select(Ticket.id).where(
+                or_(Ticket.requester_id == user_id, Ticket.created_by == user_id)
+            ),
+            select(TicketComment.id).where(TicketComment.author_id == user_id),
+            select(TicketStatusHistory.id).where(TicketStatusHistory.changed_by == user_id),
+            select(TicketAssignment.id).where(TicketAssignment.assigned_by == user_id),
+        )
+        for stmt in checks:
+            if (await self.session.execute(stmt.limit(1))).first() is not None:
+                return True
+        return False
+
+    async def delete(self, user: User) -> None:
+        await self.session.delete(user)
+        await self.session.flush()
